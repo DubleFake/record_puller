@@ -1,0 +1,25 @@
+# This is a configuration file for the .py script. All fields starting with # are considered comments and are not read by the script.
+# Examples will always be commented out.
+#
+# Query will be read as follows:
+#
+# Link_to_the_server_query:
+#    variable_name: "variable value"
+#
+# global is considered default query and will be overriten by specified link.
+
+global:
+    where: "1=1"
+    outFields: "*" 
+    returnIdsOnly: "false"
+    returngeometry: "true"
+    f: "geojson"
+    
+# This is AN EXAMPLE of custom query for a specified link
+
+#https://services3.arcgis.com/MF53hRPmwfLccHCj/ArcGIS/rest/services/bedarbiai_ketvirciai/FeatureServer/0/query:
+#    where: "1=1"
+#    outFields: "FID, Metai, Vyrai" 
+#    returnIdsOnly: "false"
+#    returngeometry: "true"
+#    f: "geojson"

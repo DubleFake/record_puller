@@ -1,0 +1,1 @@
+This script (load_data.py) queries all web services listed in "links.txt" and pulls data from them in accordance with "config.yml". Configuration file ("config.yml") can be edited to retrieve relevant data from all the web services or specific ones. Additional instruction for modifying "config.yml" is provided in the configuration file itself as comments.
