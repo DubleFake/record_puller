@@ -8,6 +8,22 @@ import pandas
 import yaml
 
 def get_records(url, conf):
+
+    """
+
+    The function pulls records from the web services in accordance with configuration file.
+
+    Arguments
+    url: str
+        URL address of a web service
+    conf: dict
+        configuration file
+
+    Outputs
+    Geodata frame from queried web service.
+
+    """
+
     query = {}
     if(url in conf):
         for key in conf[url]:
@@ -17,9 +33,23 @@ def get_records(url, conf):
             query[key] = conf['global'][key]
     response = requests.get(url, params=query)
     data = gpd.read_file(response.text);
+    print(type(data))
     return data
 
+
+
 def load_config():
+
+    """
+
+    The function reads configuration file.
+
+    Outputs
+    Configuration data.
+
+
+    """
+
     with open("config.yml", "r") as stream:
         try:
             config = yaml.safe_load(stream)
@@ -27,10 +57,17 @@ def load_config():
             print(exc)
     return config
 
+
+# Preperation for work: loading config, loading link list, initializing required variable(-s).
+
 conf = load_config()
 file = open('links.txt', 'r')
 Lines = file.readlines()
 count = 1
+
+
+# Parse through every record in list of links, pull data from each one and save all data to one .gpkg file, but on different layers for every link.
+
 for line in Lines:
     data = get_records(line.strip(), conf)
     data.to_file('output.gpkg', layer=str(count),driver="GPKG")
@@ -39,9 +76,11 @@ for line in Lines:
 print('Done.')
 
 
+"""
 
-#For testing purposes
-#
+For testing purposes
+
 data = gpd.read_file('output.gpkg', layer="3")
 print(data)
 
+"""
