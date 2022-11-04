@@ -23,3 +23,5 @@ global:
 #    returnIdsOnly: "false"
 #    returngeometry: "true"
 #    f: "geojson"
+
+connection_string: 
