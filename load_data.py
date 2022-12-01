@@ -9,6 +9,7 @@ import requests
 import geopandas as gpd
 import yaml
 import os
+import json
 
 def get_records(url, conf, main_query):
 
@@ -44,7 +45,7 @@ def download_records(conf):
     # Create a blob client using the preset file name
     blob_client = blob_service_client.get_blob_client(container="variousgisdata", blob="data.gpkg")
 
-    print("Downloading the package")
+    print("Downloading the package...")
 
     download_file_path = "downloaded_data.gpkg"
     container_client = blob_service_client.get_container_client(container= "variousgisdata")
@@ -163,13 +164,17 @@ def upload_files(data_from_links, conf):
         print(ex)
 
 def mark_links_to_download_from(Lines, linksToDownloadFrom, conf):
+    print("Marking links...")
     x = 0
     while(x < len(Lines)):
         data_from_file = gpd.read_file('downloaded_data.gpkg', layer=str(x+1))
         records_from_file = data_from_file[data_from_file.columns[0]].count()
-        records_from_cloud = get_records(Lines[x], conf, 'getCount')
-        if(records_from_file == records_from_cloud):
-            linksToDownloadFrom.append(Lines[x])
+        records_from_cloud = get_records(Lines[x].strip(), conf, 'getCount')
+        
+        print(str(x) + ": " + str(records_from_file) + "==" + str(len(json.loads(records_from_cloud)['properties']['objectIds'])))
+        
+        """if(records_from_file != len(json.loads(records_from_cloud)['properties']['objectIds'])):
+            linksToDownloadFrom.append(Lines[x])"""
         x = x + 1
     
 
@@ -185,16 +190,21 @@ def main():
     data_from_links = []
     
     #download_records(conf)
-    #pullData(data_from_links, Lines, conf)
-    #writeToFiles(data_from_links)
-    #uploadFiles(data_from_links, conf)
-    mark_links_to_download_from(Lines, linksToDownloadFrom, conf)
-
-    print(len(linksToDownloadFrom))
+    #mark_links_to_download_from(Lines, linksToDownloadFrom, conf)
+    if(len(linksToDownloadFrom) != 0):
+        pull_data(data_from_links, linksToDownloadFrom, conf)
+        write_to_files(data_from_links)
+        upload_files(data_from_links, conf)
+    
     #For testing purposes
-    #data = gpd.read_file('downloaded_data.gpkg', layer="10")
+    #data = gpd.read_file('downloaded_data.gpkg', layer="18")
     #print(data)
     #print(data[data.columns[0]].count())
+    get_records(Lines[17].strip(), conf, 'global')
+    
+    #print(str(len(json.loads(records_from_cloud)['properties']['objectIds'])))
+        
+   
    
 if __name__ == "__main__":
     main()

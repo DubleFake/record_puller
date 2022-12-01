@@ -26,8 +26,6 @@ getCount:
     where: "1=1"
     outFields: "*"
     returnIdsOnly: "true"
-    returngeometry: "false"
-    returnCountOnly: "true"
     f: "geojson"
   
 
