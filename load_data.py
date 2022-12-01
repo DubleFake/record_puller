@@ -1,3 +1,6 @@
+from base64 import encode
+import shutil
+from typing import Type
 from urllib import request
 from datetime import datetime
 from azure.identity import DefaultAzureCredential
@@ -7,7 +10,7 @@ import geopandas as gpd
 import yaml
 import os
 
-def get_records(url, conf):
+def get_records(url, conf, main_query):
 
     """
 
@@ -29,12 +32,27 @@ def get_records(url, conf):
         for key in conf[url]:
             query[key] = conf[url][key]
     else:
-        for key in conf['global']:
-            query[key] = conf['global'][key]
+        for key in conf[main_query]:
+            query[key] = conf[main_query][key]
     response = requests.get(url, params=query)
     return response.text
 
+def download_records(conf):
 
+    # Create the BlobServiceClient object with connection string from the config file
+    blob_service_client = BlobServiceClient.from_connection_string(conf["connection_string"])
+    # Create a blob client using the preset file name
+    blob_client = blob_service_client.get_blob_client(container="variousgisdata", blob="data.gpkg")
+
+    print("Downloading the package")
+
+    download_file_path = "downloaded_data.gpkg"
+    container_client = blob_service_client.get_container_client(container= "variousgisdata")
+
+    with open(file=download_file_path, mode="wb") as download_file:
+        download_file.write(container_client.download_blob("data.gpkg").readall())
+
+    print("Done.")
 
 def load_config():
 
@@ -55,87 +73,130 @@ def load_config():
             print(exc)
     return config
 
+def largest_number(in_str):
+    arr = in_str.split(",")
+    return arr.pop()
 
-# Preperation for work: loading config, loading link list, initializing required variable(-s).
+def pull_data(data_from_links, Lines, conf):
 
-conf = load_config()
-file = open('links.txt', 'r')
-Lines = file.readlines()
-data_from_links = []
-count = 1
+    # Parse through every record in list of links, pull data from each one and save all data to list.
 
-# Parse through every record in list of links, pull data from each one and save all data to list.
+    print('Starting to pull data...')
 
-print('Starting to pull data...')
+    for line in Lines:
+        print('Working on: ' + line)
+        data_from_links.append(get_records(line.strip(), conf, 'global'))
+    print('Done!')
 
-for line in Lines:
-    print('Working on: ' + line)
-    data_from_links.append(get_records(line.strip(), conf))
-print('Done!')
+def write_to_files(data_from_links):
+
+    count = 1
+
+    print('Writing to files...')
 
 
-print('Writing to files...')
-# Go through each of the link's data from the list, convert it to GEOJSON and save it to 
-# file (each on a different layer) and save each element as a separate .json file
-
-for data in data_from_links:
-
-    # Save to main .gpkg file
-    gpd.read_file(data).to_file('output.gpkg', layer=str(count),driver="GPKG")
-
-    # Create a directory to store JSONs if it does not exist
+    # Go through each of the link's data from the list, convert it to GEOJSON and save it to 
+    # file (each on a different layer) and save each element as a separate .json file
+    
     try:
-        os.makedir("JSONs")
+        os.mkdir("JSONs")
     except:
         pass
-        
 
-    # Save every layer to their own json file
-    with open("JSONs/layer"+str(count)+".json", "w", encoding="utf8") as json_file:
-       json_file.write(data)
-    count=count+1
-
-print('Done!')
-
-
-"""
-#For testing purposes
-data = gpd.read_file('output.gpkg', layer="1")
-print(data)
-"""
-
-
-
-print('Starting to upload files...')
-
-try:
-
-    # Create the BlobServiceClient object with connection string from the config file
-    blob_service_client = BlobServiceClient.from_connection_string(conf["connection_string"])
-
-    # Create timestamp for file names
-    dt_string = datetime.now().strftime("%d-%m-%Y-%H:%M:%S")
-
-    
-    # Upload every json file
-    count = 1
-    while count <= len(data_from_links):
-
-        # Create a blob client using the preset file name with the current time as the name for the blob
-        blob_client = blob_service_client.get_blob_client(container="variousgisdata", blob="layer"+str(count)+"_"+dt_string+".json")
-
-        # Upload the created file
-        with open(file="C:/Users/Bob/Desktop/Work/Python/record_puller/JSONs/layer"+str(count)+".json", mode="rb") as data:
-            blob_client.upload_blob(data)
-        count=count+1
-
-    # Upload .gpkg file
-    blob_client = blob_service_client.get_blob_client(container="variousgisdata", blob="data_"+dt_string+".gpkg")
-    with open(file="C:/Users/Bob/Desktop/Work/Python/record_puller/output.gpkg", mode="rb") as data:
-        blob_client.upload_blob(data)
+    for data in data_from_links:
+        # Save to main .gpkg file
+        gpd.read_file(data).to_file('output.gpkg', layer=str(count) ,driver="GPKG")
+        with open("JSONs/layer" + str(count) + ".json", "w", encoding='utf-8') as outfile:
+            outfile.write(data)
+        outfile.close()
+        count = count + 1
     
     print('Done!')
-except Exception as ex:
-    print('Exception:')
-    print(ex)
+
+def upload_files(data_from_links, conf):
+
+    print('Starting to upload files...')
+    try:
+
+        # Create the BlobServiceClient object with connection string from the config file
+        blob_service_client = BlobServiceClient.from_connection_string(conf["connection_string"])
+
+    
+        # Upload every json file
+        count = 1
+        while count <= len(data_from_links):
+
+            # Create a blob client using the preset file name
+            blob_client = blob_service_client.get_blob_client(container="variousgisdata", blob="layer"+str(count)+".json")
+
+            # Check if blob exists and if it does, delete it so the replacement could be uploaded
+            if(blob_client.exists()):
+                blob_client.delete_blob()
+
+            # Upload the created file
+            with open(file="JSONs/layer"+str(count)+".json", mode="rb") as data:
+                blob_client.upload_blob(data)
+            count=count+1
+
+        # Create a blob client using the preset file name
+        blob_client = blob_service_client.get_blob_client(container="variousgisdata", blob="data.gpkg")
+
+        # Check if blob exists and if it does, delete it so the replacement could be uploaded
+        if(blob_client.exists()):
+            blob_client.delete_blob()
+
+
+        # Upload .gpkg file
+        with open(file="output.gpkg", mode="rb") as data:
+            blob_client.upload_blob(data)
+
+        # Delete local file after it was uploaded
+        # os.remove("output.gpkg")
+
+        # Delete local layer 
+        # shutil.rmtree('JSONs')
+    
+        print('Done!')
+
+    except Exception as ex:
+        print('Exception:')
+        print(ex)
+
+def mark_links_to_download_from(Lines, linksToDownloadFrom, conf):
+    x = 0
+    while(x < len(Lines)):
+        data_from_file = gpd.read_file('downloaded_data.gpkg', layer=str(x+1))
+        records_from_file = data_from_file[data_from_file.columns[0]].count()
+        records_from_cloud = get_records(Lines[x], conf, 'getCount')
+        if(records_from_file == records_from_cloud):
+            linksToDownloadFrom.append(Lines[x])
+        x = x + 1
+    
+
+    print("Done.")
+
+def main():
+
+    # Preperation for work: loading config, loading link list, initializing required variable(-s).
+    linksToDownloadFrom = []
+    conf = load_config()
+    file = open('links.txt', 'r')
+    Lines = file.readlines()
+    data_from_links = []
+    
+    #download_records(conf)
+    #pullData(data_from_links, Lines, conf)
+    #writeToFiles(data_from_links)
+    #uploadFiles(data_from_links, conf)
+    mark_links_to_download_from(Lines, linksToDownloadFrom, conf)
+
+    print(len(linksToDownloadFrom))
+    #For testing purposes
+    #data = gpd.read_file('downloaded_data.gpkg', layer="10")
+    #print(data)
+    #print(data[data.columns[0]].count())
+   
+if __name__ == "__main__":
+    main()
+
 

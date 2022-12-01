@@ -15,6 +15,22 @@ global:
     returngeometry: "true"
     f: "geojson"
     
+getOnlyIds:
+    where: "1=1"
+    outFields: "*"
+    returnIdsOnly: "true"
+    returngeometry: "false"
+    f: "geojson"
+    
+getCount:
+    where: "1=1"
+    outFields: "*"
+    returnIdsOnly: "true"
+    returngeometry: "false"
+    returnCountOnly: "true"
+    f: "geojson"
+  
+
 # This is AN EXAMPLE of custom query for a specified link
 
 #https://services3.arcgis.com/MF53hRPmwfLccHCj/ArcGIS/rest/services/bedarbiai_ketvirciai/FeatureServer/0/query:
