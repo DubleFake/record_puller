@@ -1,15 +1,15 @@
-from base64 import encode
-import shutil
-from typing import Type
-from urllib import request
-from datetime import datetime
-from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from codecs import ignore_errors
+from pickle import TRUE
+from time import sleep
+from tkinter.tix import COLUMN
+from azure.storage.blob import BlobServiceClient
 import requests
+import pandas as pd
 import geopandas as gpd
 import yaml
 import os
 import json
+import time
 
 def get_records(url, conf, main_query):
 
@@ -29,14 +29,59 @@ def get_records(url, conf, main_query):
     """
 
     query = {}
-    if(url in conf):
-        for key in conf[url]:
-            query[key] = conf[url][key]
-    else:
-        for key in conf[main_query]:
-            query[key] = conf[main_query][key]
+    count = 0
+    result = []
+    column_name = ""
+
+    # Check if records exceed 2000
+    # print(json.loads(data_from_links[0])['properties']['count'])
+    for key in conf['getCount']:
+            query[key] = conf['getCount'][key]
     response = requests.get(url, params=query)
-    return response.text
+    records = int(json.loads(response.text)['properties']['count'])
+
+    query = {}
+    for key in conf['getOneRecord']:
+        query[key] = conf['getOneRecord'][key]
+    response = requests.get(url, params=query)
+    for element in conf['id_table_names']:
+        if element.lower() in response.text.lower():
+            column_name = element
+            break;
+    
+ 
+    print("Total records: " + str(records))
+
+    query = {}
+    if (records > 2000 and main_query != 'getCount' and main_query != 'getOneRecord'):
+        while (records >= count):
+            query = {}
+            if(url in conf):
+                for key in conf[url]:
+                    query[key] = conf[url][key]
+            else:
+                for key in conf[main_query]:
+                    query[key] = conf[main_query][key]
+            if(count+2000 <= records):
+                query['where'] = column_name + ' <= ' + str(count+2000) + ' AND ' + column_name + ' > ' + str(count)
+            else:
+                query['where'] = column_name + ' <= ' + str(records) + ' AND ' + column_name + ' > ' + str(count)
+            print("\t" + query['where'])
+            response = requests.get(url, params=query)
+            time.sleep(1)
+            result.append(response.text)
+            count = count + 2000
+        return result
+    else:
+        if(url in conf):
+            for key in conf[url]:
+                query[key] = conf[url][key]
+        else:
+            for key in conf[main_query]:
+                query[key] = conf[main_query][key]
+        response = requests.get(url, params=query)
+        result.append(response.text)
+        return result
 
 def download_records(conf):
 
@@ -86,7 +131,8 @@ def pull_data(data_from_links, Lines, conf):
 
     for line in Lines:
         print('Working on: ' + line)
-        data_from_links.append(get_records(line.strip(), conf, 'global'))
+        result = get_records(line.strip(), conf, 'global') 
+        data_from_links.append(result)
     print('Done!')
 
 def write_to_files(data_from_links):
@@ -103,15 +149,27 @@ def write_to_files(data_from_links):
         os.mkdir("JSONs")
     except:
         pass
-
-    for data in data_from_links:
-        # Save to main .gpkg file
-        gpd.read_file(data).to_file('output.gpkg', layer=str(count) ,driver="GPKG")
-        with open("JSONs/layer" + str(count) + ".json", "w", encoding='utf-8') as outfile:
-            outfile.write(data)
-        outfile.close()
-        count = count + 1
     
+    for record in data_from_links:
+        loop = 0
+        for data in record:
+        # Save to main .gpkg file
+            if (loop == 0):
+                gpd.read_file(data).to_file('output.gpkg', layer="1" ,driver="GPKG")
+                with open("JSONs/layer" + str(count) + ".json", "w", encoding='utf-8') as outfile:
+                    outfile.write(data)
+                outfile.close()
+            else:
+                gpd.read_file(data).to_file('output.gpkg', layer="1" ,driver="GPKG", mode="a")
+                with open("JSONs/layer" + str(count) + ".json", "a", encoding='utf-8') as outfile:
+                    outfile.write(data)
+                outfile.close()
+            loop = loop + 1
+            print("Loop No." + str(loop) + " ended")
+        count = count + 1
+        
+        
+    time.sleep(1)
     print('Done!')
 
 def upload_files(data_from_links, conf):
@@ -151,11 +209,6 @@ def upload_files(data_from_links, conf):
         with open(file="output.gpkg", mode="rb") as data:
             blob_client.upload_blob(data)
 
-        # Delete local file after it was uploaded
-        # os.remove("output.gpkg")
-
-        # Delete local layer 
-        # shutil.rmtree('JSONs')
     
         print('Done!')
 
@@ -170,11 +223,11 @@ def mark_links_to_download_from(Lines, linksToDownloadFrom, conf):
         data_from_file = gpd.read_file('downloaded_data.gpkg', layer=str(x+1))
         records_from_file = data_from_file[data_from_file.columns[0]].count()
         records_from_cloud = get_records(Lines[x].strip(), conf, 'getCount')
+
+        print(str(x) + ": " + str(records_from_file) + "==" + str(json.loads(records_from_cloud[0])['properties']['count']))
         
-        print(str(x) + ": " + str(records_from_file) + "==" + str(len(json.loads(records_from_cloud)['properties']['objectIds'])))
-        
-        """if(records_from_file != len(json.loads(records_from_cloud)['properties']['objectIds'])):
-            linksToDownloadFrom.append(Lines[x])"""
+        if(records_from_file != int(json.loads(records_from_cloud[0])['properties']['count'])):
+            linksToDownloadFrom.append(Lines[x])
         x = x + 1
     
 
@@ -187,25 +240,38 @@ def main():
     conf = load_config()
     file = open('links.txt', 'r')
     Lines = file.readlines()
-    data_from_links = []
+    data_from_links = [[]]
     
     #download_records(conf)
-    #mark_links_to_download_from(Lines, linksToDownloadFrom, conf)
+    mark_links_to_download_from(Lines, linksToDownloadFrom, conf)
     if(len(linksToDownloadFrom) != 0):
         pull_data(data_from_links, linksToDownloadFrom, conf)
         write_to_files(data_from_links)
-        upload_files(data_from_links, conf)
+        #upload_files(data_from_links, conf)
     
+
+
+
+
     #For testing purposes
-    #data = gpd.read_file('downloaded_data.gpkg', layer="18")
+
+
+    #//////////////////////////////////////////////////////////
+    #data = gpd.read_file('test.gpkg', layer="1")
     #print(data)
     #print(data[data.columns[0]].count())
-    get_records(Lines[17].strip(), conf, 'global')
+
+    #temp = get_records(Lines[0].strip(), conf, 'global')
+    #for record in temp:
+    #   data_from_links.append(record)
+    #write_to_files(data_from_links)
+    #data_from_links.append(get_records(Lines[1].strip(), conf, 'test2'))
     
-    #print(str(len(json.loads(records_from_cloud)['properties']['objectIds'])))
-        
-   
-   
+    #temp.append(gpd.read_file(data_from_links[1]))
+    #//////////////////////////////////////////////////////////
+
+    print(gpd.read_file("output.gpkg", layer="1"))
+
 if __name__ == "__main__":
     main()
 

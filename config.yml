@@ -25,9 +25,27 @@ getOnlyIds:
 getCount:
     where: "1=1"
     outFields: "*"
-    returnIdsOnly: "true"
+    returnCountOnly: "true"
     f: "geojson"
-  
+getOneRecord: 
+    where: "1=1"
+    objectIds: "1"
+    outFields: "*"
+    returnIdsOnly: "false"
+    returngeometry: "true"
+    f: "geojson"
+test1: 
+    where: "FID <= 3"
+    outFields: "*"
+    returnIdsOnly: "false"
+    returngeometry: "true"
+    f: "geojson"
+test2: 
+    where: "FID > 3"
+    outFields: "*"
+    returnIdsOnly: "false"
+    returngeometry: "true"
+    f: "geojson"
 
 # This is AN EXAMPLE of custom query for a specified link
 
@@ -38,4 +56,8 @@ getCount:
 #    returngeometry: "true"
 #    f: "geojson"
 
-connection_string: 
+connection_string:
+id_table_names:
+    - "FID"
+    - "OBJECTID"
+    - "OBJECT_ID"
