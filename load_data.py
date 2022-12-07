@@ -45,11 +45,10 @@ def get_records(url, conf, main_query):
         query[key] = conf['getOneRecord'][key]
     response = requests.get(url, params=query)
     for element in conf['id_table_names']:
-        if element.lower() in response.text.lower():
+        if not (json.loads(response.text.lower())['features'][0]['properties'].get(element.lower()) is None):
             column_name = element
-            break;
+            break; 
     
- 
     print("Total records: " + str(records))
 
     query = {}
@@ -155,12 +154,12 @@ def write_to_files(data_from_links):
         for data in record:
         # Save to main .gpkg file
             if (loop == 0):
-                gpd.read_file(data).to_file('output.gpkg', layer="1" ,driver="GPKG")
+                gpd.read_file(data).to_file('output.gpkg', layer=str(count) ,driver="GPKG")
                 with open("JSONs/layer" + str(count) + ".json", "w", encoding='utf-8') as outfile:
                     outfile.write(data)
                 outfile.close()
             else:
-                gpd.read_file(data).to_file('output.gpkg', layer="1" ,driver="GPKG", mode="a")
+                gpd.read_file(data).to_file('output.gpkg', layer=str(count) ,driver="GPKG", mode="a")
                 with open("JSONs/layer" + str(count) + ".json", "a", encoding='utf-8') as outfile:
                     outfile.write(data)
                 outfile.close()
@@ -270,7 +269,7 @@ def main():
     #temp.append(gpd.read_file(data_from_links[1]))
     #//////////////////////////////////////////////////////////
 
-    print(gpd.read_file("output.gpkg", layer="1"))
+    #print(gpd.read_file("output.gpkg", layer="2"))
 
 if __name__ == "__main__":
     main()
