@@ -1,63 +1,132 @@
-import requests
 import geopandas as gpd
+import pandas as pd
+import requests
 import datetime
-import json
+import time
 import csv
+import yaml
 
 def main():
-    fromDate = int(datetime.datetime(2022, 1, 1).timestamp() * 1000)
-    toDate = int(datetime.datetime(2022, 2, 28).timestamp() * 1000)
-    link = "https://opencity.vplanas.lt/arcgis/rest/services/Aplinkosauga/Oro_tarsa/MapServer/3/query"
-    data = get_records(link)
-    sorted = sort_records(data, fromDate, toDate)
-    export_results(sorted)
-
-    print()
-
-
-def get_records(url):
-    query = {
-        'where':'1=1',
-        'returnIdsOnly':'false',
-        'returnGeometry':'false',
-        'outFields':'*',
-        'f':'pjson'
-        }
-    response = requests.get(url, params=query)
-    return json.loads(json.dumps(response.json()))
-
-def sort_records(data_to_sort, fromDate, toDate):
-
-    result = []
-
-    for record in data_to_sort['features']:
-
-        if(record['attributes']['last_seen'] >= fromDate and record['attributes']['last_seen'] <= toDate):
-            result.append(record)
+    config = load_config()
+    url = "https://api.purpleair.com/v1/sensors/:sensor_index/history/csv"
+    pull_data(url, datetime.datetime(2022, 1, 1, 0, 0, 0), datetime.datetime(2022, 2, 28, 23, 59, 59), config)
     
-    return result
+def load_config():
 
-def export_results(results):
-    keys = results[0]['attributes'].keys()
-    data = [d['attributes'] for d in results]
-    fix_date(data)
+    """
 
-    # Open the CSV file in write mode
-    with open('output.csv', 'w', newline='', encoding='utf-8-sig') as output_file:
+    The function reads configuration file.
 
-        # Create a CSV writer object
-        dict_writer = csv.DictWriter(output_file, fieldnames=keys)
+    Outputs
+    Configuration data.
 
-        # Write the header row
-        dict_writer.writeheader()
 
-        # Write the data rows
-        dict_writer.writerows(data)
+    """
 
-def fix_date(data):
-    for record in data:
-        new_date = datetime.datetime.fromtimestamp(record['last_seen'] / 1000) # convert milliseconds to seconds and then to date.
-        record['last_seen'] = new_date
+    with open("config.yaml", "r") as stream:
+        try:
+            config = yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+    return config
+
+def pull_data(url, start_date, end_date, config):
+
+    """
+    Retrieve data from a set of sensors and return it as a dictionary of DataFrames.
+
+    Parameters
+        url : str
+            The base URL to make requests to.
+        start_date:
+            From which date records will be pulled.
+        end_date:
+            Until which date records will be pulled.
+        config:
+            Dictionary of variables from the configuration file.
+    Returns
+        dict[str, pd.DataFrame]
+            A dictionary with sensor index keys and pandas DataFrames as values, containing the data retrieved from the sensors.
+    Notes
+        The function makes GET requests to the specified URL with the sensor index appended and specified headers and parameters, and loads
+        the response text as JSON to create the DataFrames with the data and fields from the JSON object. The sensor indices are hardcoded in the function.
+    """
+    
+    sensor_index_list = config['sensor_indexes']
+    count = 0
+
+    for sensor_index in sensor_index_list:
+
+        # Try to replace ':sensor_index' in the url with the sensor_index variable
+        try:
+            index_url = url.replace(":sensor_index", str(sensor_index))
+        except:
+            pass
+
+        # Define headers and parameters for GET request
+        sensor_headers = {
+
+                "X-API-Key": config['api_token']
+
+            }
+
+        sensor_data_params = { 
+
+            "sensor_index": sensor_index,
+            "start_timestamp": time.mktime(start_date.timetuple()),
+            "end_timestamp": time.mktime(end_date.timetuple()),
+            "average": 1440,
+            "fields": "*"
+            }
+        
+        # Make GET request and load response text as JSON
+        response = requests.get(url=index_url, headers=sensor_headers, params=sensor_data_params)
+        data = response.text
+        if count == 0:
+            export_results(data, "w")
+        else:
+            export_results(data, "a")
+        count=count+1
+
+def export_results(data, mode):
+
+    data = data[:-1]
+    if mode == "a":
+        rows = data.strip().split('\n')
+        rows.pop(0)
+        data = '\n'.join(rows)
+        # Fix date before exporting
+        rows = data.split('\n')
+        rows = [r.split(',') for r in rows]
+
+        # modify the first column value for each row
+        for row in rows:
+            try:
+                new_date = datetime.datetime.fromtimestamp(int(row[0])) # convert milliseconds to seconds and then to date.
+                row[0] = new_date  # replace the first column value with the new value
+            except ValueError:
+                continue
+    else:
+        # Fix date before exporting
+        rows = data.split('\n')
+        rows = [r.split(',') for r in rows]
+
+        # modify the first column value for each row
+        for row in rows[1:]:  # exclude the header row
+            try:
+                new_date = datetime.datetime.fromtimestamp(int(row[0])) # convert milliseconds to seconds and then to date.
+                row[0] = new_date  # replace the first column value with the new value
+            except ValueError:
+                continue
+    
+        
+
+    # Start exporting
+    with open('output.csv', mode, newline='') as file:
+        writer = csv.writer(file)
+
+        # write the data to the CSV file
+        writer.writerows(rows)
 
 if __name__ == "__main__":
     main()
