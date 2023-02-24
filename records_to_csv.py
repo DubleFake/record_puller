@@ -5,11 +5,15 @@ import datetime
 import time
 import csv
 import yaml
+import json
 
 def main():
     config = load_config()
     url = "https://api.purpleair.com/v1/sensors/:sensor_index/history/csv"
-    pull_data(url, datetime.datetime(2022, 1, 1, 0, 0, 0), datetime.datetime(2022, 2, 28, 23, 59, 59), config)
+    url2 = "https://api.purpleair.com/v1/sensors/:sensor_index"
+    names = get_sensor_names(url2, config)
+    pull_data(url, datetime.datetime(2022, 1, 1, 0, 0, 0), datetime.datetime(2022, 2, 28, 23, 59, 59), config, names)
+    
     
 def load_config():
 
@@ -30,7 +34,38 @@ def load_config():
             print(exc)
     return config
 
-def pull_data(url, start_date, end_date, config):
+def get_sensor_names(url, config):
+    sensor_names = {}
+    sensor_index_list = config['sensor_indexes']
+    for sensor_index in sensor_index_list:
+
+        # Try to replace ':sensor_index' in the url with the sensor_index variable
+        try:
+            index_url = url.replace(":sensor_index", str(sensor_index))
+        except:
+            pass
+
+        # Define headers and parameters for GET request
+        sensor_headers = {
+
+                "X-API-Key": config['api_token']
+
+            }
+
+        sensor_data_params = { 
+
+            "sensor_index": sensor_index,
+            "fields": "name"
+            }
+        
+        # Make GET request and load response text as JSON
+        response = requests.get(url=index_url, headers=sensor_headers, params=sensor_data_params)
+        data = response.text
+        sensor_names[sensor_index] = json.loads(data)['sensor']['name']
+    return sensor_names
+    
+
+def pull_data(url, start_date, end_date, config, names):
 
     """
     Retrieve data from a set of sensors and return it as a dictionary of DataFrames.
@@ -82,14 +117,27 @@ def pull_data(url, start_date, end_date, config):
         # Make GET request and load response text as JSON
         response = requests.get(url=index_url, headers=sensor_headers, params=sensor_data_params)
         data = response.text
+        data = add_names(data, names, sensor_index)
         if count == 0:
             export_results(data, "w")
         else:
             export_results(data, "a")
         count=count+1
 
-def export_results(data, mode):
+def add_names(data, names, sensor_index):
+    count = 0
+    data = "name,"+data
+    rows = data.strip().split('\n')
+    new_rows = []
+    for row in rows:
+        if count != 0:
+            row = names[sensor_index] + "," + row
+        new_rows.append(row)
+        count = count + 1
+    new_data = '\n'.join(new_rows)
+    return new_data
 
+def export_results(data, mode):
     data = data[:-1]
     if mode == "a":
         rows = data.strip().split('\n')
@@ -102,8 +150,8 @@ def export_results(data, mode):
         # modify the first column value for each row
         for row in rows:
             try:
-                new_date = datetime.datetime.fromtimestamp(int(row[0])) # convert milliseconds to seconds and then to date.
-                row[0] = new_date  # replace the first column value with the new value
+                new_date = datetime.datetime.fromtimestamp(int(row[1])) # convert milliseconds to seconds and then to date.
+                row[1] = new_date  # replace the second column value with the new value
             except ValueError:
                 continue
     else:
@@ -114,15 +162,13 @@ def export_results(data, mode):
         # modify the first column value for each row
         for row in rows[1:]:  # exclude the header row
             try:
-                new_date = datetime.datetime.fromtimestamp(int(row[0])) # convert milliseconds to seconds and then to date.
-                row[0] = new_date  # replace the first column value with the new value
+                new_date = datetime.datetime.fromtimestamp(int(row[1])) # convert milliseconds to seconds and then to date.
+                row[1] = new_date  # replace the second column value with the new value
             except ValueError:
                 continue
-    
-        
 
     # Start exporting
-    with open('output.csv', mode, newline='') as file:
+    with open('output.csv', mode, encoding='utf-8-sig', newline='') as file:
         writer = csv.writer(file)
 
         # write the data to the CSV file
